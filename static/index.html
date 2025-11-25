@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Download Station</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    * { box-sizing: border-box; }
+    .sharp-card { box-shadow: 0 0 0 1px rgba(0,0,0,0.1), 0 4px 6px -1px rgba(0,0,0,0.1); }
+    .sharp-button { transition: all 0.15s ease; }
+    .sharp-button:hover { transform: translateY(-1px); box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+    .sharp-input { border: 2px solid #e5e7eb; transition: border-color 0.15s ease; }
+    .sharp-input:focus { border-color: #3b82f6; outline: none; }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+  <div class="container mx-auto px-6 py-10 max-w-6xl">
+    <!-- Header -->
+    <header class="mb-10 border-l-4 border-blue-600 pl-4">
+      <h1 class="text-4xl font-bold text-gray-900 tracking-tight">Download Station</h1>
+      <p class="text-gray-600 mt-1 text-lg">Your own private local download station!</p>
+    </header>
+
+    <!-- Add Download Form -->
+    <div class="bg-white sharp-card mb-8 p-8">
+      <div class="flex items-center mb-6 border-b border-gray-200 pb-4">
+        <h2 class="text-2xl font-bold text-gray-900">Add New Download</h2>
+      </div>
+      <form id="downloadForm" class="space-y-6">
+        <div>
+          <label for="url" class="block text-sm font-semibold text-gray-700 mb-2 uppercase tracking-wide">Download URL</label>
+          <input type="url" id="url" name="url" required
+            class="sharp-input w-full px-4 py-3 text-gray-900 bg-white"
+            placeholder="https://example.com/file.zip">
+        </div>
+        <div>
+          <label for="destination" class="block text-sm font-semibold text-gray-700 mb-2 uppercase tracking-wide">Destination Directory</label>
+          <select id="destination" name="destination" required
+            class="sharp-input w-full px-4 py-3 text-gray-900 bg-white">
+            <option value="" disabled selected>Select a directory</option>
+          </select>
+          <p class="mt-2 text-sm text-gray-500">Base dir is: <span id="base-dir-preview" class="font-mono text-gray-700"></span></p>
+        </div>
+        <div>
+          <label for="filename" class="block text-sm font-semibold text-gray-700 mb-2 uppercase tracking-wide">Custom Filename (Optional)</label>
+          <input type="text" id="filename" name="filename"
+            class="sharp-input w-full px-4 py-3 text-gray-900 bg-white"
+            placeholder="Leave blank to use original filename">
+        </div>
+        <div class="pt-2">
+          <button type="submit"
+            class="sharp-button w-full py-4 px-6 bg-blue-600 text-white font-semibold uppercase tracking-wide hover:bg-blue-700">
+            Start Download
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Downloads List -->
+    <div class="bg-white sharp-card p-8">
+      <div class="flex justify-between items-center mb-6 border-b border-gray-200 pb-4">
+        <h2 class="text-2xl font-bold text-gray-900">Active & Completed Downloads</h2>
+        <div class="text-sm text-gray-600 font-mono" id="base-dir-info"></div>
+      </div>
+      <div id="downloadsList" class="space-y-6">
+        <p id="no-downloads" class="text-gray-500 text-center py-8 text-lg">No downloads yet. Add one to get started!</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Download Item Template -->
+  <template id="download-item-template">
+    <div class="download-item relative border-2 border-gray-200 bg-white p-6 hover:border-gray-300 transition-colors">
+      <button class="remove-btn absolute top-4 right-4 w-8 h-8 flex items-center justify-center bg-red-600 text-white font-bold hover:bg-red-700 sharp-button">×</button>
+      
+      <div class="mb-4">
+        <h3 class="filename font-bold text-xl text-gray-900 mb-1"></h3>
+        <p class="url text-sm text-gray-600 mb-1 truncate"></p>
+        <p class="destination text-sm text-gray-600 font-mono"></p>
+      </div>
+
+      <div class="flex items-center justify-between mb-3">
+        <span class="status px-3 py-1 text-xs font-bold uppercase tracking-wider"></span>
+        <span class="size-text text-sm text-gray-600 font-mono"></span>
+      </div>
+
+      <div class="progress-container h-2 bg-gray-200 mb-2 overflow-hidden">
+        <div class="progress-bar h-full bg-blue-600 transition-all duration-300" style="width: 0%"></div>
+      </div>
+      <div class="text-sm text-gray-600 mb-4">
+        <span class="progress-text font-mono">0%</span>
+      </div>
+
+      <div class="flex gap-3">
+        <button class="cancel-btn sharp-button px-4 py-2 bg-red-600 text-white text-sm font-semibold uppercase tracking-wide hover:bg-red-700">Cancel</button>
+        <button class="pause-btn sharp-button px-4 py-2 bg-yellow-500 text-white text-sm font-semibold uppercase tracking-wide hover:bg-yellow-600">Pause</button>
+        <button class="resume-btn sharp-button px-4 py-2 bg-green-600 text-white text-sm font-semibold uppercase tracking-wide hover:bg-green-700 hidden">Resume</button>
+        <button class="download-btn sharp-button px-4 py-2 bg-blue-600 text-white text-sm font-semibold uppercase tracking-wide hover:bg-blue-700 hidden">Download</button>
+        <button class="delete-btn sharp-button px-4 py-2 bg-gray-700 text-white text-sm font-semibold uppercase tracking-wide hover:bg-gray-800 hidden">Delete File</button>
+      </div>
+    </div>
+  </template>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const downloadForm = document.getElementById('downloadForm');
+      const downloadsList = document.getElementById('downloadsList');
+      const noDownloadsMessage = document.getElementById('no-downloads');
+      const downloadTemplate = document.getElementById('download-item-template');
+      const destinationSelect = document.getElementById('destination');
+      const baseDirInfo = document.getElementById('base-dir-info');
+      const baseDirPreview = document.getElementById('base-dir-preview');
+
+      const downloads = new Map();
+      let config = {};
+
+      // Fetch configuration
+      fetch('/api/config')
+        .then(response => response.json())
+        .then(data => {
+          config = data;
+          baseDirInfo.textContent = `Base: ${config.baseDir}`;
+          baseDirPreview.textContent = config.baseDir;
+          config.allowedDirs.forEach(dir => {
+            const option = document.createElement('option');
+            option.value = dir;
+            option.textContent = dir;
+            destinationSelect.appendChild(option);
+          });
+        })
+        .catch(error => console.error('Error fetching config:', error));
+
+      // WebSocket connection
+      const ws = new WebSocket(`ws://${window.location.host}/ws`);
+      ws.onopen = () => {
+        console.log('WebSocket connected');
+        fetchDownloads();
+      };
+      ws.onmessage = (event) => {
+        const download = JSON.parse(event.data);
+        updateDownloadItem(download);
+      };
+      ws.onerror = (error) => console.error('WebSocket error:', error);
+      ws.onclose = () => console.log('WebSocket disconnected');
+
+      // Form submission
+      downloadForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const formData = {
+          url: document.getElementById('url').value,
+          destination: document.getElementById('destination').value,
+          filename: document.getElementById('filename').value
+        };
+        fetch('/api/downloads', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData)
+        })
+          .then(response => {
+            if (!response.ok) throw new Error('Failed to start download');
+            return response.json();
+          })
+          .then(() => {
+            downloadForm.reset();
+            destinationSelect.selectedIndex = 0;
+          })
+          .catch(error => {
+            console.error('Error:', error);
+            alert('Failed to start download. Check console for details.');
+          });
+      });
+
+      function fetchDownloads() {
+        fetch('/api/downloads')
+          .then(response => response.json())
+          .then(downloadsArray => {
+            if (downloadsArray.length === 0) {
+              noDownloadsMessage.classList.remove('hidden');
+            } else {
+              noDownloadsMessage.classList.add('hidden');
+              downloadsArray.forEach(download => updateDownloadItem(download));
+            }
+          })
+          .catch(error => console.error('Error fetching downloads:', error));
+      }
+
+      function updateDownloadItem(download) {
+        noDownloadsMessage.classList.add('hidden');
+        let downloadElement = document.getElementById(`download-${download.id}`);
+        
+        if (!downloadElement) {
+          const template = downloadTemplate.content.cloneNode(true);
+          downloadElement = template.querySelector('.download-item');
+          downloadElement.id = `download-${download.id}`;
+
+          const cancelBtn = downloadElement.querySelector('.cancel-btn');
+          const pauseBtn = downloadElement.querySelector('.pause-btn');
+          const resumeBtn = downloadElement.querySelector('.resume-btn');
+          const downloadBtn = downloadElement.querySelector('.download-btn');
+          const deleteBtn = downloadElement.querySelector('.delete-btn');
+          const removeBtn = downloadElement.querySelector('.remove-btn');
+
+          cancelBtn.addEventListener('click', () => cancelDownload(download.id));
+          pauseBtn.addEventListener('click', () => pauseDownload(download.id));
+          resumeBtn.addEventListener('click', () => resumeDownload(download.id));
+          downloadBtn.addEventListener('click', () => downloadFile(download));
+          deleteBtn.addEventListener('click', () => deleteFile(download.id));
+          removeBtn.addEventListener('click', () => removeDownloadHistory(download.id));
+
+          downloadsList.appendChild(downloadElement);
+        }
+
+        downloadElement.querySelector('.filename').textContent = download.filename;
+        downloadElement.querySelector('.url').textContent = download.url;
+        downloadElement.querySelector('.destination').textContent = `📁 ${config.baseDir}/${download.destination}`;
+
+        const statusElement = downloadElement.querySelector('.status');
+        statusElement.textContent = download.status;
+        statusElement.className = 'status px-3 py-1 text-xs font-bold uppercase tracking-wider';
+        
+        const statusColors = {
+          'downloading': 'bg-blue-600 text-white',
+          'completed': 'bg-green-600 text-white',
+          'failed': 'bg-red-600 text-white',
+          'queued': 'bg-yellow-500 text-white',
+          'paused': 'bg-gray-500 text-white',
+          'cancelled': 'bg-gray-700 text-white'
+        };
+        statusElement.className += ' ' + (statusColors[download.status] || 'bg-gray-400 text-white');
+
+        const progressBar = downloadElement.querySelector('.progress-bar');
+        const progressText = downloadElement.querySelector('.progress-text');
+        const sizeText = downloadElement.querySelector('.size-text');
+        
+        const progress = download.progress || 0;
+        progressBar.style.width = `${progress}%`;
+        progressText.textContent = `${Math.round(progress)}%`;
+        
+        const downloaded = formatSize(download.downloaded);
+        const total = download.size > 0 ? formatSize(download.size) : 'Unknown';
+        sizeText.textContent = `${downloaded} / ${total}`;
+
+        const pauseBtn = downloadElement.querySelector('.pause-btn');
+        const resumeBtn = downloadElement.querySelector('.resume-btn');
+        const downloadBtn = downloadElement.querySelector('.download-btn');
+        const cancelBtn = downloadElement.querySelector('.cancel-btn');
+        const deleteBtn = downloadElement.querySelector('.delete-btn');
+
+        [pauseBtn, resumeBtn, downloadBtn, cancelBtn, deleteBtn].forEach(btn => btn.classList.add('hidden'));
+
+        if (download.status === 'downloading') {
+          pauseBtn.classList.remove('hidden');
+          cancelBtn.classList.remove('hidden');
+        } else if (download.status === 'paused') {
+          resumeBtn.classList.remove('hidden');
+          cancelBtn.classList.remove('hidden');
+        } else if (download.status === 'completed') {
+          downloadBtn.classList.remove('hidden');
+          deleteBtn.classList.remove('hidden');
+        } else if (download.status === 'cancelled' || download.status === 'failed') {
+          deleteBtn.classList.remove('hidden');
+        }
+
+        downloads.set(download.id, download);
+      }
+
+      function formatSize(bytes) {
+        if (bytes === 0) return '0 B';
+        const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(1024));
+        return parseFloat((bytes / Math.pow(1024, i)).toFixed(2)) + ' ' + sizes[i];
+      }
+
+      function cancelDownload(id) {
+        fetch(`/api/downloads/${id}/cancel`, { method: 'POST' })
+          .then(response => response.json())
+          .catch(error => {
+            console.error('Error cancelling download:', error);
+            alert('Failed to cancel download.');
+          });
+      }
+
+      function pauseDownload(id) {
+        fetch(`/api/downloads/${id}/pause`, { method: 'POST' })
+          .then(response => response.json())
+          .catch(error => {
+            console.error('Error pausing download:', error);
+            alert('Pause feature not yet implemented.');
+          });
+      }
+
+      function resumeDownload(id) {
+        fetch(`/api/downloads/${id}/resume`, { method: 'POST' })
+          .then(response => response.json())
+          .catch(error => {
+            console.error('Error resuming download:', error);
+            alert('Resume feature not yet implemented.');
+          });
+      }
+
+      function downloadFile(download) {
+        const filePath = `${config.baseDir}/${download.destination}/${download.filename}`;
+        const downloadPath = `/download?file=${encodeURIComponent(filePath)}`;
+        const a = document.createElement('a');
+        a.href = downloadPath;
+        a.download = download.filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+
+      function deleteFile(id) {
+        if (!confirm('Are you sure you want to delete this file from disk?')) return;
+        fetch(`/api/downloads/${id}/deletefile`, { method: 'POST' })
+          .then(response => response.json())
+          .then(() => alert('File deleted successfully'))
+          .catch(error => {
+            console.error('Error deleting file:', error);
+            alert('Failed to delete file.');
+          });
+      }
+
+      function removeDownloadHistory(id) {
+        if (!confirm('Remove this download from history?')) return;
+        fetch(`/api/downloads/${id}/remove`, { method: 'POST' })
+          .then(response => response.json())
+          .then(() => {
+            const downloadElement = document.getElementById(`download-${id}`);
+            if (downloadElement) downloadElement.remove();
+            downloads.delete(id);
+            if (downloads.size === 0) noDownloadsMessage.classList.remove('hidden');
+          })
+          .catch(error => {
+            console.error('Error removing download:', error);
+            alert('Failed to remove download from history.');
+          });
+      }
+    });
+  </script>
+</body>
+</html>
